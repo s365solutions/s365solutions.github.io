@@ -1,0 +1,63 @@
+const { app }  = require("@azure/functions");
+const crypto   = require("crypto");
+
+const SUPPORTED_ALGOS = ["sha1", "sha256", "sha384", "sha512"];
+
+app.http("hash", {
+  methods    : ["GET", "POST"],
+  authLevel  : "anonymous",
+  route      : "hash",
+
+  handler: async (request) => {
+
+    // Support both GET (?value=) and POST (JSON body)
+    let value, algo;
+
+    if (request.method === "POST") {
+      try {
+        const body = await request.json();
+        value = body?.value;
+        algo  = body?.algo;
+      } catch {
+        return respond(400, { success: false, error: "Invalid JSON body." });
+      }
+    } else {
+      value = request.query.get("value");
+      algo  = request.query.get("algo");
+    }
+
+    const safeAlgo = SUPPORTED_ALGOS.includes((algo || "").toLowerCase())
+      ? algo.toLowerCase()
+      : "sha256";
+
+    if (value === null || value === undefined) {
+      return respond(400, {
+        success : false,
+        error   : "Missing required parameter: value",
+        usage   : {
+          GET  : "GET /api/hash?value=<string>[&algo=sha1|sha256|sha384|sha512]",
+          POST : "POST /api/hash  body: { \"value\": \"<string>\", \"algo\": \"sha256\" }"
+        }
+      });
+    }
+
+    const hash = crypto
+      .createHash(safeAlgo)
+      .update(value, "utf8")
+      .digest("hex");
+
+    return respond(200, {
+      success   : true,
+      algorithm : safeAlgo.toUpperCase(),
+      hash      : hash
+    });
+  }
+});
+
+function respond(status, body) {
+  return {
+    status,
+    headers : { "Content-Type": "application/json" },
+    body    : JSON.stringify(body)
+  };
+}
